@@ -1,0 +1,1141 @@
+{
+  "name": "AI Lead Qualification & Sales Agent - Portfolio",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-chat-portfolio",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e35547d2-d28e-4b6c-91a9-aa216b375c7b",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        144
+      ]
+      
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m",
+              "name": "message",
+              "value": "={{ $json.body.message }}",
+              "type": "string"
+            },
+            {
+              "id": "s",
+              "name": "sessionId",
+              "value": "={{ $json.body.sessionId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "dotNotation": false
+        }
+      },
+      "id": "bfac45d7-3072-4555-b674-3a8d2bdc4caa",
+      "name": "Normalize Customer Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_LEAD_MESSAGES_DATA_TABLE_ID"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "sessionId",
+              "keyValue": "={{ $('Normalize Customer Message').item.json.sessionId }}"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "d25246db-d917-4c6e-b751-f20588a55c34",
+      "name": "Get Handoff State",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        144
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows=$input.all().map(item=>item.json).filter(row=>row&&(row.message||row.sender));const message=String($('Normalize Customer Message').item.json.message||'').trim();const managerPhrases=['talk to your manager','talk to the manager','speak to your manager','speak to the manager','talk to a human','speak to a human','talk to a real person','speak to a real person','talk to a person','speak to a person','connect me with a manager','connect me to a manager','i want a human','i need a human','i want to talk to a human','i want to speak to a human','i want to talk to your manager','i want to speak to your manager','i wanna talk to human','i wanna talk to your manager','connect me to human','connect me with human','connect me to a human','connect me with a human','connect me to your manager','connect me with your manager'];const isManagerRequest=text=>managerPhrases.some(p=>String(text||'').toLowerCase().trim().includes(p));const events=rows.map(row=>{const sender=String(row.sender||'');const text=String(row.message||'');let type=null;if(sender==='manager_resume_ai')type='resume_ai';else if(sender==='manager'||sender==='customer_manager_request')type='handoff';else if(isManagerRequest(text))type='handoff';if(!type)return null;const time=new Date(row.message_created_at||row.createdAt||0).getTime();return{type,time:Number.isFinite(time)?time:0,id:Number(row.id||0)}}).filter(Boolean);if(isManagerRequest(message))events.push({type:'handoff',time:Date.now(),id:Number.MAX_SAFE_INTEGER});events.sort((a,b)=>(b.time-a.time)||(b.id-a.id));const latestEvent=events[0];const managerRequested=isManagerRequest(message);const handoffActive=managerRequested||latestEvent?.type==='handoff';return[{json:{message,sessionId:$('Normalize Customer Message').item.json.sessionId,handoffActive,managerRequested}}];"
+      },
+      "id": "7d7195a3-cc17-44fb-807e-5ce4ad8c466b",
+      "name": "Determine Handoff State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.handoffActive }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "68fa3d42-b390-4373-9148-edd180437d35",
+      "name": "Handoff Active?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_LEAD_MESSAGES_DATA_TABLE_ID"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $('Normalize Customer Message').item.json.sessionId }}",
+            "message": "={{ $('Normalize Customer Message').item.json.message }}",
+            "sender": "={{ $('Determine Handoff State').item.json.managerRequested ? 'customer_manager_request' : 'customer' }}",
+            "message_created_at": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {
+          "optimizeBulk": false
+        }
+      },
+      "id": "fc39b12b-7ddd-4b97-b3f0-ceb01f190f07",
+      "name": "Save Customer Message",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1184,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_MANAGER_CHAT_ID",
+        "text": "={{ \"👤 Customer message\\n\\n\" + $('Normalize Customer Message').item.json.message + \"\\n\\nSession ID: \" + $('Normalize Customer Message').item.json.sessionId + \"\\n\\n↩️ Reply to this message to answer the customer.\" }}",
+        "replyMarkup": "forceReply",
+        "forceReply": {
+          "force_reply": true,
+          "selective": false
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "69617307-a726-4779-8e52-57f4cc70f26e",
+      "name": "Notify Manager - Customer Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1472,
+        0
+      ],
+      
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "YOUR_TELEGRAM_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: \"Thanks! A sales specialist is handling your request and will reply shortly.\" }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "41413fc4-758d-4d17-ac41-81f8a45dc9ce",
+      "name": "Respond Handoff Ack",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "You are an AI Sales Assistant for a business.\n\nYour job is to have a natural conversation with website visitors and qualify potential leads.\n\nYour goals are:\n1. Understand what service or product the customer needs.\n2. Ask relevant questions to understand their requirements.\n3. Identify their approximate budget.\n4. Identify their expected timeline.\n5. Understand their company or business context when relevant.\n6. Keep the conversation natural and concise.\n7. Never ask for all information at once.\n8. Ask one or two relevant questions at a time.\n9. Do not pressure the customer.\n10. When enough information has been collected, summarize the customer's needs and indicate that a sales specialist can follow up.\n\nImportant:\nDo not invent information.\nIf the customer has not provided something, treat it as unknown.\n\nYour responses should be friendly, professional, and concise."
+        }
+      },
+      "id": "c10e511f-dbe0-48b8-8868-e4b64fff4678",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1120,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash-lite",
+        "options": {}
+      },
+      "id": "2903eda6-ffc1-45a4-980c-8f6c8428022f",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1136,
+        528
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_GEMINI_CREDENTIAL_ID",
+          "name": "YOUR_GEMINI_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').item.json.body.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "c8146f54-9736-41c9-8adf-c705c088761a",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        1264,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_AI_LEADS_DATA_TABLE_ID"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "sessionId",
+              "keyValue": "={{ $('Normalize Customer Message').item.json.sessionId }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "b7c1048f-548a-453f-8e65-540aa0244b14",
+      "name": "Get row(s)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        304
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "text": "=={{ \"Customer message: \" + $('Normalize Customer Message').item.json.message + \"\\nAI response: \" + $('AI Agent').item.json.output }}",
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\"service\":\"\",\"business_type\":\"\",\"budget\":\"\",\"timeline\":\"\",\"requirements\":\"\",\"lead_status\":\"\"}",
+        "options": {
+          "systemPromptTemplate": "Extract lead qualification information from the conversation provided.\n\nUse ALL available conversation information to determine the customer's current lead information.\n\nDo not invent information.\n\nIf a field has already been provided earlier in the conversation, keep that information even if the latest customer message does not repeat it.\n\nUse empty strings only when the information is genuinely unknown.\n\nlead_status must be one of:\n- qualified\n- not_qualified_yet\n\nA lead should be qualified when enough information is available to understand:\n1. What service/product the customer needs.\n2. Their approximate budget.\n3. Their expected timeline.\n\nIf any of these are still unknown, use not_qualified_yet."
+        }
+      },
+      "id": "ffb4c685-9152-4a27-8f90-aeea9fa252ab",
+      "name": "Extract Lead Information",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1,
+      "position": [
+        1696,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const oldLead=$('Get row(s)').item.json;const newLead=$('Extract Lead Information').item.json.output;const merged={service:newLead.service||oldLead.service||'',business_type:newLead.business_type||oldLead.business_type||'',budget:newLead.budget||oldLead.budget||'',timeline:newLead.timeline||oldLead.timeline||'',requirements:newLead.requirements||oldLead.requirements||'',sessionId:oldLead.sessionId||$('Normalize Customer Message').item.json.sessionId,lead_created_at:oldLead.lead_created_at||new Date().toISOString(),lead_id:oldLead.id||null};merged.lead_status=merged.service&&merged.budget&&merged.timeline?'qualified':'not_qualified_yet';return[{json:merged}];"
+      },
+      "id": "e0a148d7-e55f-4383-bd87-50181db45c95",
+      "name": "Merge Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.lead_id.toString() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "47a97951-8088-42ad-b9eb-a9744f9b1f91",
+      "name": "Lead Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2272,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_AI_LEADS_DATA_TABLE_ID"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyValue": "={{ $json.lead_id }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "service": "={{ $json.service }}",
+            "business_type": "={{ $json.business_type }}",
+            "budget": "={{ $json.budget }}",
+            "timeline": "={{ $json.timeline }}",
+            "requirements": "={{ $json.requirements }}",
+            "lead_status": "={{ $json.lead_status }}",
+            "sessionId": "={{ $json.sessionId }}",
+            "lead_created_at": "={{ $json.lead_created_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "1af054c7-1299-41e8-afc0-d84dc4a06ec8",
+      "name": "Update Lead",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2496,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "reply",
+              "name": "reply",
+              "displayName": "reply",
+              "value": "={{ $('AI Agent').item.json.output }}",
+              "type": "string"
+            },
+            {
+              "id": "service",
+              "name": "service",
+              "displayName": "service",
+              "value": "={{ $('Merge Lead Data').item.json.service || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "business_type",
+              "name": "business_type",
+              "displayName": "business_type",
+              "value": "={{ $('Merge Lead Data').item.json.business_type || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "budget",
+              "name": "budget",
+              "displayName": "budget",
+              "value": "={{ $('Merge Lead Data').item.json.budget || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "timeline",
+              "name": "timeline",
+              "displayName": "timeline",
+              "value": "={{ $('Merge Lead Data').item.json.timeline || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "requirements",
+              "name": "requirements",
+              "displayName": "requirements",
+              "value": "={{ $('Merge Lead Data').item.json.requirements || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "lead_status",
+              "name": "lead_status",
+              "displayName": "lead_status",
+              "value": "={{ $('Merge Lead Data').item.json.lead_status || 'not_qualified_yet' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "dotNotation": false
+        }
+      },
+      "id": "32f941a1-12a1-4d07-a54a-627958229448",
+      "name": "Prepare Chat Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2720,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_AI_LEADS_DATA_TABLE_ID"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "service": "={{ $json.service }}",
+            "business_type": "={{ $json.business_type }}",
+            "budget": "={{ $json.budget }}",
+            "timeline": "={{ $json.timeline }}",
+            "requirements": "={{ $json.requirements }}",
+            "lead_status": "={{ $json.lead_status }}",
+            "sessionId": "={{ $('Normalize Customer Message').item.json.sessionId }}",
+            "lead_created_at": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {
+          "optimizeBulk": false
+        }
+      },
+      "id": "5e2744f4-03c5-4a2b-9ca5-a5f462bc4974",
+      "name": "Save Lead",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2496,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.lead_status }}",
+              "rightValue": "qualified",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "98f58601-c1ac-4132-9f64-f50001a64b20",
+      "name": "Qualified Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2496,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_MANAGER_CHAT_ID",
+        "text": "={{ \"🔥 New Qualified Lead\\n\\nService: \" + $json.service + \"\\nBusiness: \" + $json.business_type + \"\\nBudget: \" + $json.budget + \"\\nTimeline: \" + $json.timeline + \"\\nRequirements: \" + $json.requirements + \"\\n\\nSession ID: \" + $('Merge Lead Data').item.json.sessionId }}",
+        "replyMarkup": "forceReply",
+        "forceReply": {
+          "force_reply": true,
+          "selective": false
+        },
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "09674173-395d-404d-b21f-e6be22d31e43",
+      "name": "Notify Manager",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2720,
+        224
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "YOUR_TELEGRAM_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: $('Prepare Chat Response').item.json.reply, service: $('Prepare Chat Response').item.json.service || '', business_type: $('Prepare Chat Response').item.json.business_type || '', budget: $('Prepare Chat Response').item.json.budget || '', timeline: $('Prepare Chat Response').item.json.timeline || '', requirements: $('Prepare Chat Response').item.json.requirements || '', lead_status: $('Prepare Chat Response').item.json.lead_status || 'not_qualified_yet' }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "4ca35096-7b89-4bac-ab21-e7ec337bb99c",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2944,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "chatIds": "YOUR_MANAGER_CHAT_ID"
+        }
+      },
+      "id": "d3cdd8b5-0ad0-4b39-babd-e5ca36d2783d",
+      "name": "Telegram Manager Reply",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        832
+      ],
+      "credentials": {
+        "telegramApi": {
+         "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+        "name": "YOUR_TELEGRAM_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const text=String($json.message?.text||'').trim();const repliedText=String($json.message?.reply_to_message?.text||'');const match=repliedText.match(/Session ID:\\s*([^\\s]+)/i);const sessionId=match?match[1]:'';const resumeAiPatterns=[/^\\/ai\\s*$/i,/^(?:now\\s+)?(?:connect|switch|go|hand|give)\\s+(?:back\\s+)?(?:to\\s+)?ai\\s*$/i,/^(?:now\\s+)?let\\s+(?:the\\s+)?ai\\s+(?:handle|take\\s+over)\\s*$/i,/^(?:now\\s+)?ai\\s+(?:can\\s+)?(?:handle|take\\s+over|continue|resume)\\s*$/i,/^(?:connect|switch)\\s+(?:it\\s+)?back\\s+to\\s+ai\\s*$/i,/^great,?\\s+now\\s+you\\s+connect\\s+to\\s+ai\\s*$/i];const isResumeCommand=resumeAiPatterns.some(p=>p.test(text));return[{json:{sessionId,message:text,sender:isResumeCommand?'manager_resume_ai':'manager',message_created_at:new Date().toISOString()}}];"
+      },
+      "id": "f183ad98-bd95-4807-ada0-5adbc7aa734c",
+      "name": "Parse Manager Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sessionId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "179840b7-186f-4094-932d-595d8e85a584",
+      "name": "Handoff Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_LEAD_MESSAGES_DATA_TABLE_ID"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sessionId": "={{ $json.sessionId }}",
+            "message": "={{ $json.message }}",
+            "sender": "={{ $json.sender }}",
+            "message_created_at": "={{ $json.message_created_at }}"
+          }
+        },
+        "options": {
+          "optimizeBulk": false
+        }
+      },
+      "id": "407b32fd-3378-45bc-9394-f6c96f5e5ff2",
+      "name": "Save Manager Message",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        736
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_MANAGER_CHAT_ID",
+        "text": "={{ $('Parse Manager Reply').item.json.sender === 'manager_resume_ai' ? \"🤖 AI resumed for customer\\nSession ID: \" + $('Parse Manager Reply').item.json.sessionId : \"✅ Reply saved for customer\\nSession ID: \" + $('Parse Manager Reply').item.json.sessionId }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "87ff9f78-8be8-4ffa-a24b-ccd76bdcc06e",
+      "name": "Confirm Manager Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        736
+      ],
+      "credentials": {
+        "telegramApi": {
+         "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "YOUR_TELEGRAM_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_MANAGER_CHAT_ID",
+        "text": "⚠️ I couldn't identify the customer session. Please reply directly to the qualified-lead notification message.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "2cbbbfa3-a86f-4e60-b3a9-430a91359e95",
+      "name": "Ignore Invalid Manager Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        928
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+          "name": "YOUR_TELEGRAM_CREDENTIAL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "lead-messages-portfolio",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3e673641-ebb7-4261-83d4-fa486b45528f",
+      "name": "Customer Messages Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_LEAD_MESSAGES_DATA_TABLE_ID"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "sessionId",
+              "keyValue": "={{ $json.query.sessionId }}"
+            },
+            {
+              "keyName": "sender",
+              "keyValue": "manager"
+            }
+          ]
+        },
+        "returnAll": true
+      },
+      "id": "ad9cfd4a-5945-4700-a053-c30949d0e415",
+      "name": "Get Manager Messages",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        1152
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const messages=$input.all().map(item=>item.json).filter(item=>item.message);return[{json:{messages}}];"
+      },
+      "id": "1699800f-318f-4063-8dc7-ead435c857bd",
+      "name": "Build Customer Messages Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "bb5746cc-0492-4e81-9401-af70bfdeb0aa",
+      "name": "Respond Customer Messages",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        1152
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Customer Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Customer Message": {
+      "main": [
+        [
+          {
+            "node": "Get Handoff State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Handoff State": {
+      "main": [
+        [
+          {
+            "node": "Determine Handoff State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Handoff State": {
+      "main": [
+        [
+          {
+            "node": "Handoff Active?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handoff Active?": {
+      "main": [
+        [
+          {
+            "node": "Save Customer Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Customer Message": {
+      "main": [
+        [
+          {
+            "node": "Notify Manager - Customer Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Manager - Customer Message": {
+      "main": [
+        [
+          {
+            "node": "Respond Handoff Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Get row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Extract Lead Information",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)": {
+      "main": [
+        [
+          {
+            "node": "Extract Lead Information",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Lead Information": {
+      "main": [
+        [
+          {
+            "node": "Merge Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Lead Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update Lead",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Qualified Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualified Lead?": {
+      "main": [
+        [
+          {
+            "node": "Notify Manager",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Manager": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Manager Reply": {
+      "main": [
+        [
+          {
+            "node": "Parse Manager Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Manager Reply": {
+      "main": [
+        [
+          {
+            "node": "Handoff Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handoff Gate": {
+      "main": [
+        [
+          {
+            "node": "Save Manager Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ignore Invalid Manager Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Manager Message": {
+      "main": [
+        [
+          {
+            "node": "Confirm Manager Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Messages Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Manager Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Manager Messages": {
+      "main": [
+        [
+          {
+            "node": "Build Customer Messages Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Customer Messages Response": {
+      "main": [
+        [
+          {
+            "node": "Respond Customer Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "YOUR_VERSION_ID",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+   
+  },
+  "nodeGroups": [],
+  "id": "YOUR_WORKFLOW_ID",
+  "tags": []
+}
