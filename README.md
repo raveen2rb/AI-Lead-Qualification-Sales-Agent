@@ -35,6 +35,20 @@ n8n Webhook
 Website Response
 ```
 
+## Workflow Screenshots
+
+### Workflow Overview
+
+![n8n Workflow Overview](screenshots/workflow.PNG)
+
+### Manager Handoff & Reply
+
+![Manager Handoff and Reply](screenshots/manager%20reply.PNG)
+
+### Workflow Maintenance / Error Handling
+
+![Workflow Maintenance](screenshots/maintence.PNG)
+
 ## Project Structure
 
 ```text
